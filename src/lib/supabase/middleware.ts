@@ -37,7 +37,9 @@ export async function updateSession(request: NextRequest) {
     pathname === "/welcome" ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/settings") ||
-    pathname === "/auth/callback"
+    pathname === "/auth/callback" ||
+    pathname === "/opengraph-image" ||
+    pathname === "/twitter-image"
   ) {
     return supabaseResponse;
   }
