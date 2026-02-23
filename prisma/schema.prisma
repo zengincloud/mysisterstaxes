@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id               Int      @id @default(autoincrement())
+  date             String
+  description      String
+  amount           Float
+  category         String
+  accountDebit     String   @map("account_debit")
+  accountCredit    String   @map("account_credit")
+  gstAmount        Float    @default(0) @map("gst_amount")
+  isCapitalAsset   Boolean  @default(false) @map("is_capital_asset")
+  ccaClass         String?  @map("cca_class")
+  ccaRate          Float?   @map("cca_rate")
+  notes            String?
+  flaggedForReview Boolean  @default(false) @map("flagged_for_review")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("transactions")
+}
+
+model Message {
+  id        Int      @id @default(autoincrement())
+  role      String
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("messages")
+}
+
+model ChartOfAccounts {
+  id            Int    @id @default(autoincrement())
+  accountNumber String @unique @map("account_number")
+  accountName   String @map("account_name")
+  accountType   String @map("account_type")
+
+  @@map("chart_of_accounts")
+}
