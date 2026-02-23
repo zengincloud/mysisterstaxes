@@ -15,7 +15,22 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "My Sister's Taxes",
-  description: "Conversational bookkeeping assistant for small business",
+  description:
+    "Free AI bookkeeping assistant for Canadian small business. Tax deductions, P&L, balance sheets, and CSV exports.",
+  metadataBase: new URL("https://mysisterstaxes.vercel.app"),
+  openGraph: {
+    title: "My Sister's Taxes",
+    description:
+      "Free AI bookkeeping assistant for Canadian small business. Tax deductions, P&L, balance sheets, and CSV exports.",
+    siteName: "My Sister's Taxes",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "My Sister's Taxes",
+    description:
+      "Free AI bookkeeping assistant for Canadian small business.",
+  },
 };
 
 export default function RootLayout({
