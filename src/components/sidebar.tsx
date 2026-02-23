@@ -7,6 +7,7 @@ import {
   BookOpen,
   BarChart3,
   FileText,
+  Upload,
   Download,
   LogOut,
   Menu,
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/journal", label: "Journal", icon: BookOpen },
   { href: "/summary", label: "Summary", icon: BarChart3 },
   { href: "/statements", label: "Reports", icon: FileText },
+  { href: "/upload", label: "Upload", icon: Upload },
 ];
 
 const currentYear = new Date().getFullYear();
