@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Transaction {
@@ -42,4 +43,13 @@ model ChartOfAccounts {
   accountType   String @map("account_type")
 
   @@map("chart_of_accounts")
+}
+
+model Settings {
+  id              Int      @id @default(autoincrement())
+  key             String   @unique
+  value           String
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("settings")
 }

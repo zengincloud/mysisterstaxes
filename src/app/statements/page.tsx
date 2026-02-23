@@ -138,14 +138,22 @@ export default function StatementsPage() {
     new Date().getFullYear().toString()
   );
   const [yearOpen, setYearOpen] = useState(false);
+  const [companyName, setCompanyName] = useState("");
 
   const loadData = useCallback(async (year: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/statements?year=${year}`);
-      if (res.ok) {
-        const result = await res.json();
+      const [statementsRes, settingsRes] = await Promise.all([
+        fetch(`/api/statements?year=${year}`),
+        fetch("/api/settings"),
+      ]);
+      if (statementsRes.ok) {
+        const result = await statementsRes.json();
         setData(result);
+      }
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        if (settings.company_name) setCompanyName(settings.company_name);
       }
     } catch (err) {
       console.error("Failed to load statements:", err);
@@ -261,6 +269,7 @@ export default function StatementsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Financial Statements</h1>
           <p className="text-sm text-muted-foreground">
+            {companyName && <>{companyName} &middot; </>}
             {data.transactionCount} transactions in {selectedYear}
           </p>
         </div>
@@ -314,7 +323,9 @@ export default function StatementsPage() {
 
       {/* Print header (hidden on screen) */}
       <div className="hidden print:block text-center mb-6">
-        <h1 className="text-xl font-bold">My Sister&apos;s Taxes</h1>
+        <h1 className="text-xl font-bold">
+          {companyName || "My Sister\u0027s Taxes"}
+        </h1>
         <p className="text-sm text-gray-500">
           {tabs.find((t) => t.key === activeTab)?.label} - Year ending December
           31, {selectedYear}

@@ -1,9 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    let year = searchParams.get("year");
+
+    if (!year) {
+      const yearSetting = await prisma.settings.findUnique({
+        where: { key: "active_tax_year" },
+      });
+      year = yearSetting?.value || null;
+    }
+
+    const where = year
+      ? { date: { gte: `${year}-01-01`, lte: `${year}-12-31` } }
+      : {};
+
     const transactions = await prisma.transaction.findMany({
+      where,
       orderBy: { date: "asc" },
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useActiveYear } from "@/lib/use-active-year";
 import {
   Table,
   TableBody,
@@ -68,10 +69,13 @@ export default function JournalPage() {
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [editForm, setEditForm] = useState<Partial<Transaction>>({});
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const activeYear = useActiveYear();
+  const prevYear = useRef(activeYear);
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(async (year: string | null) => {
     try {
-      const res = await fetch("/api/transactions");
+      const url = year ? `/api/transactions?year=${year}` : "/api/transactions";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setTransactions(data);
@@ -84,8 +88,14 @@ export default function JournalPage() {
   }, []);
 
   useEffect(() => {
-    loadTransactions();
-  }, [loadTransactions]);
+    if (!activeYear) return;
+    // Only reload if year actually changed
+    if (prevYear.current !== activeYear) {
+      setLoading(true);
+      prevYear.current = activeYear;
+    }
+    loadTransactions(activeYear);
+  }, [activeYear, loadTransactions]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -124,7 +134,7 @@ export default function JournalPage() {
         body: JSON.stringify({ id: editTx.id, ...editForm }),
       });
       if (res.ok) {
-        await loadTransactions();
+        await loadTransactions(activeYear);
       }
     } catch (err) {
       console.error("Failed to update:", err);
@@ -179,7 +189,7 @@ export default function JournalPage() {
         <div>
           <h1 className="text-2xl font-semibold">Journal</h1>
           <p className="text-sm text-muted-foreground">
-            {transactions.length} transaction
+            Tax year {activeYear} &middot; {transactions.length} transaction
             {transactions.length !== 1 ? "s" : ""}
           </p>
         </div>

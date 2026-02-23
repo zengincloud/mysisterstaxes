@@ -16,24 +16,34 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [ownerName, setOwnerName] = useState("there");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load message history
+  // Load message history and owner name
   useEffect(() => {
-    async function loadMessages() {
+    async function loadData() {
       try {
-        const res = await fetch("/api/messages");
-        if (res.ok) {
-          const data = await res.json();
+        const [messagesRes, settingsRes] = await Promise.all([
+          fetch("/api/messages"),
+          fetch("/api/settings"),
+        ]);
+        if (messagesRes.ok) {
+          const data = await messagesRes.json();
           setMessages(data);
         }
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json();
+          if (settings.owner_name && settings.owner_name !== "there") {
+            setOwnerName(settings.owner_name);
+          }
+        }
       } catch (err) {
-        console.error("Failed to load messages:", err);
+        console.error("Failed to load data:", err);
       } finally {
         setInitialLoading(false);
       }
     }
-    loadMessages();
+    loadData();
   }, []);
 
   // Auto-scroll to bottom
@@ -98,21 +108,35 @@ export default function ChatPage() {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full px-4">
-            <div className="text-center max-w-md">
-              <div className="text-5xl mb-4">📒</div>
-              <h2 className="text-xl font-semibold mb-2">
-                Welcome to My Sister&apos;s Taxes
-              </h2>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                I&apos;m your bookkeeping assistant. Just tell me about your
-                business transactions in plain English and I&apos;ll log them
-                as proper journal entries.
-              </p>
-              <div className="mt-4 text-xs text-muted-foreground space-y-1">
-                <p>&quot;I invoiced a client $5,000 today&quot;</p>
-                <p>&quot;Bought office supplies at Staples for $200&quot;</p>
-                <p>&quot;How much revenue this year?&quot;</p>
+          <div className="max-w-3xl mx-auto">
+            <div className="flex gap-3 py-4 px-4 md:px-6 bg-muted/40">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">
+                B
+              </div>
+              <div className="prose prose-sm max-w-none">
+                <p className="text-sm leading-relaxed">
+                  Welcome, <strong>{ownerName}</strong>! 👋 I&apos;m your
+                  bookkeeping assistant, here to help you with:
+                </p>
+                <ul className="text-sm mt-2 space-y-1">
+                  <li>
+                    <strong>Logging transactions</strong> — just describe them
+                    in plain English and I&apos;ll create proper journal entries
+                    with GST
+                  </li>
+                  <li>
+                    <strong>Tracking your finances</strong> — ask me about
+                    revenue, expenses, GST owing, etc.
+                  </li>
+                  <li>
+                    <strong>Tax planning</strong> — I can suggest ways to reduce
+                    your taxes and flag things for your CPA
+                  </li>
+                </ul>
+                <p className="text-sm mt-3">
+                  Tell me a little bit about your business and we can get
+                  started!
+                </p>
               </div>
             </div>
           </div>

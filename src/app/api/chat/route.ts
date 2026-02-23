@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { SYSTEM_PROMPT } from "@/lib/system-prompt";
+import { getSystemPrompt } from "@/lib/system-prompt";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -292,6 +292,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get active tax year
+    const yearSetting = await prisma.settings.findUnique({
+      where: { key: "active_tax_year" },
+    });
+    const activeTaxYear = yearSetting?.value || String(new Date().getFullYear());
+
     // Save user message
     await prisma.message.create({
       data: { role: "user", content: message },
@@ -310,11 +316,13 @@ export async function POST(request: NextRequest) {
       })
     );
 
+    const systemPrompt = getSystemPrompt(activeTaxYear);
+
     // Call Claude with tools
     let response = await anthropic.messages.create({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools,
       messages: conversationHistory,
     });
@@ -353,7 +361,7 @@ export async function POST(request: NextRequest) {
       response = await anthropic.messages.create({
         model: "claude-sonnet-4-5-20250929",
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         tools,
         messages: conversationHistory,
       });

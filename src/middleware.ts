@@ -5,8 +5,13 @@ const COOKIE_NAME = "mst_session";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow login page and auth API
-  if (pathname === "/login" || pathname.startsWith("/api/auth")) {
+  // Allow login, welcome, and auth/settings API without session
+  if (
+    pathname === "/login" ||
+    pathname === "/welcome" ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/settings")
+  ) {
     return NextResponse.next();
   }
 

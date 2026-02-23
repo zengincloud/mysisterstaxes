@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 import crypto from "crypto";
+import { prisma } from "@/lib/prisma";
 
 const SECRET = process.env.AUTH_SECRET || "default-dev-secret-change-me";
-const PASSWORD = process.env.APP_PASSWORD || "taxtime2024";
 const COOKIE_NAME = "mst_session";
 
 function sign(value: string): string {
@@ -19,8 +19,16 @@ function verify(signed: string): string | null {
   return null;
 }
 
-export function checkPassword(password: string): boolean {
-  return password === PASSWORD;
+export function hashPassword(password: string): string {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
+
+export async function checkPassword(password: string): Promise<boolean> {
+  const stored = await prisma.settings.findUnique({
+    where: { key: "user_password" },
+  });
+  if (!stored) return false;
+  return stored.value === hashPassword(password);
 }
 
 export async function createSession(): Promise<void> {

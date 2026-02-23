@@ -10,8 +10,10 @@ import {
   Loader2,
 } from "lucide-react";
 import { MonthlyChart } from "@/components/monthly-chart";
+import { useActiveYear } from "@/lib/use-active-year";
 
 interface SummaryData {
+  year: string;
   totalRevenue: number;
   totalExpenses: number;
   netIncome: number;
@@ -38,11 +40,15 @@ function formatCurrency(amount: number) {
 export default function SummaryPage() {
   const [data, setData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeYear = useActiveYear();
 
   useEffect(() => {
+    if (!activeYear) return;
+
     async function loadSummary() {
+      setLoading(true);
       try {
-        const res = await fetch("/api/summary");
+        const res = await fetch(`/api/summary?year=${activeYear}`);
         if (res.ok) {
           const summary = await res.json();
           setData(summary);
@@ -54,9 +60,9 @@ export default function SummaryPage() {
       }
     }
     loadSummary();
-  }, []);
+  }, [activeYear]);
 
-  if (loading) {
+  if (loading || !activeYear) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -74,13 +80,13 @@ export default function SummaryPage() {
 
   const cards = [
     {
-      title: "YTD Revenue",
+      title: "Revenue",
       value: formatCurrency(data.totalRevenue),
       icon: TrendingUp,
       color: "text-emerald-600",
     },
     {
-      title: "YTD Expenses",
+      title: "Expenses",
       value: formatCurrency(data.totalExpenses),
       icon: TrendingDown,
       color: "text-red-500",
@@ -116,8 +122,8 @@ export default function SummaryPage() {
       <div>
         <h1 className="text-2xl font-semibold">Summary</h1>
         <p className="text-sm text-muted-foreground">
-          Year-to-date overview ({new Date().getFullYear()}) &middot;{" "}
-          {data.transactionCount} transactions
+          Tax year {activeYear} &middot; {data.transactionCount} transaction
+          {data.transactionCount !== 1 ? "s" : ""}
         </p>
       </div>
 
@@ -147,7 +153,7 @@ export default function SummaryPage() {
         <Card className="border-amber-200 bg-amber-50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-amber-800">
-              Estimated Tax Owing (YTD)
+              Estimated Tax Owing ({activeYear})
             </CardTitle>
             <Receipt className="h-4 w-4 text-amber-600" />
           </CardHeader>

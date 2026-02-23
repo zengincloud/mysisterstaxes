@@ -1,14 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const currentYear = new Date().getFullYear().toString();
+    // Use query param year, or fall back to active tax year setting
+    const { searchParams } = new URL(request.url);
+    let year = searchParams.get("year");
+
+    if (!year) {
+      const yearSetting = await prisma.settings.findUnique({
+        where: { key: "active_tax_year" },
+      });
+      year = yearSetting?.value || new Date().getFullYear().toString();
+    }
+
     const transactions = await prisma.transaction.findMany({
       where: {
         date: {
-          gte: `${currentYear}-01-01`,
-          lte: `${currentYear}-12-31`,
+          gte: `${year}-01-01`,
+          lte: `${year}-12-31`,
         },
       },
     });
@@ -27,7 +37,7 @@ export async function GET() {
 
     // Initialize all months
     for (let m = 1; m <= 12; m++) {
-      const key = `${currentYear}-${String(m).padStart(2, "0")}`;
+      const key = `${year}-${String(m).padStart(2, "0")}`;
       monthlyData[key] = { revenue: 0, expenses: 0 };
     }
 
@@ -71,6 +81,7 @@ export async function GET() {
       }));
 
     return NextResponse.json({
+      year,
       totalRevenue,
       totalExpenses: totalExpenses + totalCogs,
       netIncome,
