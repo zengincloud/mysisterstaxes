@@ -10,6 +10,7 @@ datasource db {
 
 model Transaction {
   id               Int      @id @default(autoincrement())
+  userId           String   @default("") @map("user_id")
   date             String
   description      String
   amount           Float
@@ -24,15 +25,18 @@ model Transaction {
   flaggedForReview Boolean  @default(false) @map("flagged_for_review")
   createdAt        DateTime @default(now()) @map("created_at")
 
+  @@index([userId])
   @@map("transactions")
 }
 
 model Message {
   id        Int      @id @default(autoincrement())
+  userId    String   @default("") @map("user_id")
   role      String
   content   String
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([userId])
   @@map("messages")
 }
 
@@ -47,9 +51,11 @@ model ChartOfAccounts {
 
 model Settings {
   id              Int      @id @default(autoincrement())
-  key             String   @unique
+  userId          String   @default("") @map("user_id")
+  key             String
   value           String
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
+  @@unique([userId, key])
   @@map("settings")
 }

@@ -1,9 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
+
+async function getUserId() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id || null;
+}
 
 export async function GET() {
   try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const messages = await prisma.message.findMany({
+      where: { userId },
       orderBy: { createdAt: "asc" },
     });
     return NextResponse.json(messages);
@@ -18,7 +33,12 @@ export async function GET() {
 
 export async function DELETE() {
   try {
-    await prisma.message.deleteMany();
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    await prisma.message.deleteMany({ where: { userId } });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Messages API error:", error);

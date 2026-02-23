@@ -1,19 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
 
 // BC small business tax rates (approximate)
 const SMALL_BIZ_FEDERAL_RATE = 0.09; // 9% federal small business rate
 const SMALL_BIZ_BC_RATE = 0.02; // 2% BC small business rate
 const TOTAL_SMALL_BIZ_RATE = SMALL_BIZ_FEDERAL_RATE + SMALL_BIZ_BC_RATE; // 11%
 
+async function getUserId() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id || null;
+}
+
 export async function GET(request: NextRequest) {
+  const userId = await getUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const year = searchParams.get("year") || new Date().getFullYear().toString();
-  const type = searchParams.get("type") || "all"; // pnl, balance_sheet, cash_flow, tax_estimate, all
+  const type = searchParams.get("type") || "all";
 
   try {
     const transactions = await prisma.transaction.findMany({
       where: {
+        userId,
         date: {
           gte: `${year}-01-01`,
           lte: `${year}-12-31`,
@@ -44,7 +59,6 @@ export async function GET(request: NextRequest) {
           revenue += t.amount;
           gstCollected += t.gstAmount;
           cashInflows += t.amount + t.gstAmount;
-          // If debit is AR, it's not cash yet
           if (t.accountDebit.includes("1100")) {
             accountsReceivable += t.amount + t.gstAmount;
             cashInflows -= t.amount + t.gstAmount;
@@ -62,7 +76,6 @@ export async function GET(request: NextRequest) {
           totalExpenses += t.amount;
           gstPaid += t.gstAmount;
           cashOutflows += t.amount + t.gstAmount;
-          // Categorize by account name
           const acctName = t.accountDebit.replace(/^\d+\s*/, "");
           expenses[acctName] = (expenses[acctName] || 0) + t.amount;
           break;
@@ -72,7 +85,6 @@ export async function GET(request: NextRequest) {
           equipment += t.amount;
           gstPaid += t.gstAmount;
           cashOutflows += t.amount + t.gstAmount;
-          // Half-year rule for CCA in first year
           if (t.ccaRate) {
             ccaDepreciation += t.amount * t.ccaRate * 0.5;
           }
@@ -88,7 +100,6 @@ export async function GET(request: NextRequest) {
     const netIncomeAfterTax = netIncomeBeforeTax - estimatedTax;
     const netGst = gstCollected - gstPaid;
 
-    // P&L Statement
     const pnl = {
       revenue,
       cogs,
@@ -104,7 +115,6 @@ export async function GET(request: NextRequest) {
       netIncomeAfterTax,
     };
 
-    // Balance Sheet (simplified)
     const balanceSheet = {
       assets: {
         current: [
@@ -140,7 +150,6 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // Cash Flow Statement
     const cashFlow = {
       operating: {
         netIncome: netIncomeBeforeTax,
@@ -176,7 +185,6 @@ export async function GET(request: NextRequest) {
         equipment,
     };
 
-    // Tax Estimate
     const taxEstimate = {
       netIncomeBeforeTax,
       federalRate: SMALL_BIZ_FEDERAL_RATE,
@@ -188,8 +196,9 @@ export async function GET(request: NextRequest) {
       totalOwing: estimatedTax + Math.max(0, netGst),
     };
 
-    // Available years
+    // Available years for this user
     const allTransactions = await prisma.transaction.findMany({
+      where: { userId },
       select: { date: true },
     });
     const years = [

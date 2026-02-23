@@ -1,21 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
+
+async function getUserId() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id || null;
+}
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     let year = searchParams.get("year");
 
     if (!year) {
       const yearSetting = await prisma.settings.findUnique({
-        where: { key: "active_tax_year" },
+        where: { userId_key: { userId, key: "active_tax_year" } },
       });
       year = yearSetting?.value || null;
     }
 
     const where = year
-      ? { date: { gte: `${year}-01-01`, lte: `${year}-12-31` } }
-      : {};
+      ? { userId, date: { gte: `${year}-01-01`, lte: `${year}-12-31` } }
+      : { userId };
 
     const transactions = await prisma.transaction.findMany({
       where,

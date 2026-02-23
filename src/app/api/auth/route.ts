@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -39,7 +39,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    // Save settings (name, company, year)
+    const userId = data.user?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Failed to create user" },
+        { status: 500 }
+      );
+    }
+
+    // Save settings scoped to this user
     const settings: Record<string, string> = {
       owner_name: name?.trim() || "there",
       company_name: company?.trim() || "",
@@ -49,9 +57,9 @@ export async function POST(request: NextRequest) {
 
     for (const [key, value] of Object.entries(settings)) {
       await prisma.settings.upsert({
-        where: { key },
+        where: { userId_key: { userId, key } },
         update: { value },
-        create: { key, value },
+        create: { userId, key, value },
       });
     }
 

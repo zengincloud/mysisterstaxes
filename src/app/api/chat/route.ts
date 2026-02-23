@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
 import { getSystemPrompt } from "@/lib/system-prompt";
 
 const anthropic = new Anthropic({
@@ -141,12 +142,14 @@ const tools: Anthropic.Tool[] = [
 
 async function handleToolCall(
   name: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  userId: string
 ): Promise<string> {
   switch (name) {
     case "log_transaction": {
       const transaction = await prisma.transaction.create({
         data: {
+          userId,
           date: input.date as string,
           description: input.description as string,
           amount: input.amount as number,
@@ -175,7 +178,7 @@ async function handleToolCall(
       const category = input.category as string | undefined;
       const limit = (input.limit as number) || 20;
 
-      const where: Record<string, unknown> = {};
+      const where: Record<string, unknown> = { userId };
       if (startDate || endDate) {
         where.date = {};
         if (startDate)
@@ -260,6 +263,7 @@ async function handleToolCall(
         });
       }
       const last = await prisma.transaction.findFirst({
+        where: { userId },
         orderBy: { createdAt: "desc" },
       });
       if (!last) {
@@ -283,6 +287,16 @@ async function handleToolCall(
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = user.id;
     const { message } = await request.json();
 
     if (!message || typeof message !== "string") {
@@ -292,19 +306,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get active tax year
+    // Get active tax year for this user
     const yearSetting = await prisma.settings.findUnique({
-      where: { key: "active_tax_year" },
+      where: { userId_key: { userId, key: "active_tax_year" } },
     });
     const activeTaxYear = yearSetting?.value || String(new Date().getFullYear());
 
     // Save user message
     await prisma.message.create({
-      data: { role: "user", content: message },
+      data: { userId, role: "user", content: message },
     });
 
     // Get recent conversation history for context
     const recentMessages = await prisma.message.findMany({
+      where: { userId },
       orderBy: { createdAt: "asc" },
       take: 50,
     });
@@ -340,6 +355,7 @@ export async function POST(request: NextRequest) {
         const result = await handleToolCall(
           tu.name,
           tu.input,
+          userId,
         );
         toolResults.push({
           type: "tool_result",
@@ -375,7 +391,7 @@ export async function POST(request: NextRequest) {
 
     // Save assistant message
     await prisma.message.create({
-      data: { role: "assistant", content: assistantMessage },
+      data: { userId, role: "assistant", content: assistantMessage },
     });
 
     return NextResponse.json({

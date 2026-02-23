@@ -1,9 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
+
+async function getUserId() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id || null;
+}
 
 export async function GET() {
   try {
-    const settings = await prisma.settings.findMany();
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const settings = await prisma.settings.findMany({
+      where: { userId },
+    });
     const map: Record<string, string> = {};
     for (const s of settings) {
       map[s.key] = s.value;
@@ -20,13 +36,18 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
 
     for (const [key, value] of Object.entries(body)) {
       await prisma.settings.upsert({
-        where: { key },
+        where: { userId_key: { userId, key } },
         update: { value: String(value) },
-        create: { key, value: String(value) },
+        create: { userId, key, value: String(value) },
       });
     }
 
