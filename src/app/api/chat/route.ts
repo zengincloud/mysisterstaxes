@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
+import { getUserId } from "@/lib/auth";
 import { getSystemPrompt } from "@/lib/system-prompt";
 
 const anthropic = new Anthropic({
@@ -287,16 +287,11 @@ async function handleToolCall(
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    const userId = await getUserId();
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = user.id;
     const { message } = await request.json();
 
     if (!message || typeof message !== "string") {

@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
+import { getUserId } from "@/lib/auth";
 
 // BC small business tax rates (approximate)
 const SMALL_BIZ_FEDERAL_RATE = 0.09; // 9% federal small business rate
 const SMALL_BIZ_BC_RATE = 0.02; // 2% BC small business rate
 const TOTAL_SMALL_BIZ_RATE = SMALL_BIZ_FEDERAL_RATE + SMALL_BIZ_BC_RATE; // 11%
-
-async function getUserId() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user?.id || null;
-}
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId();
