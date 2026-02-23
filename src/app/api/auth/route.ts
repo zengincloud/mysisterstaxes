@@ -1,24 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkPassword, createSession, logout, hashPassword } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
+  const supabase = await createClient();
 
-  // Signup flow: includes name, company, password, year
+  // Signup flow
   if (body.signup) {
-    const { name, company, password, year } = body;
+    const { email, password, name, company, year } = body;
 
-    if (!password || password.length < 4) {
+    if (!email || !password) {
       return NextResponse.json(
-        { error: "Password must be at least 4 characters" },
+        { error: "Email and password are required" },
         { status: 400 }
       );
     }
 
-    // Save all settings
-    const settings = {
-      user_password: hashPassword(password),
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name: name?.trim() || "",
+          company: company?.trim() || "",
+        },
+      },
+    });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    // Save settings (name, company, year)
+    const settings: Record<string, string> = {
       owner_name: name?.trim() || "there",
       company_name: company?.trim() || "",
       active_tax_year: year || String(new Date().getFullYear()),
@@ -33,22 +55,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    await createSession();
     return NextResponse.json({ success: true });
   }
 
-  // Login flow: just password
-  const { password } = body;
+  // Login flow
+  const { email, password } = body;
 
-  if (!(await checkPassword(password))) {
-    return NextResponse.json({ error: "Wrong password" }, { status: 401 });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 401 });
   }
 
-  await createSession();
   return NextResponse.json({ success: true });
 }
 
 export async function DELETE() {
-  await logout();
+  const supabase = await createClient();
+  await supabase.auth.signOut();
   return NextResponse.json({ success: true });
 }

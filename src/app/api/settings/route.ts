@@ -6,12 +6,7 @@ export async function GET() {
     const settings = await prisma.settings.findMany();
     const map: Record<string, string> = {};
     for (const s of settings) {
-      // Never expose the password hash to the client
-      if (s.key === "user_password") {
-        map[s.key] = "***";
-      } else {
-        map[s.key] = s.value;
-      }
+      map[s.key] = s.value;
     }
     return NextResponse.json(map);
   } catch (error) {
@@ -28,8 +23,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     for (const [key, value] of Object.entries(body)) {
-      // Don't allow password changes through generic settings endpoint
-      if (key === "user_password") continue;
       await prisma.settings.upsert({
         where: { key },
         update: { value: String(value) },

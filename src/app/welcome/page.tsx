@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ const yearOptions = [
 export default function WelcomePage() {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [loading, setLoading] = useState(false);
@@ -28,8 +30,13 @@ export default function WelcomePage() {
     e.preventDefault();
     setError("");
 
-    if (!password || password.length < 4) {
-      setError("Password must be at least 4 characters.");
+    if (!email) {
+      setError("Email is required.");
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      setError("Password must be at least 6 characters.");
       return;
     }
 
@@ -40,6 +47,7 @@ export default function WelcomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           signup: true,
+          email: email.trim(),
           name: name.trim(),
           company: company.trim(),
           password,
@@ -111,6 +119,22 @@ export default function WelcomePage() {
 
             <div className="space-y-2">
               <label
+                htmlFor="email"
+                className="text-sm font-medium text-foreground"
+              >
+                Email
+              </label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label
                 htmlFor="password"
                 className="text-sm font-medium text-foreground"
               >
@@ -119,7 +143,7 @@ export default function WelcomePage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="At least 4 characters"
+                placeholder="At least 6 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -173,6 +197,13 @@ export default function WelcomePage() {
             >
               {loading ? "Setting up..." : "Get Started"}
             </Button>
+
+            <p className="text-sm text-center text-muted-foreground">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary hover:underline">
+                Sign in
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>

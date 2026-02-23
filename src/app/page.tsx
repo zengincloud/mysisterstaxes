@@ -1,16 +1,16 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  // Check if user has signed up (password exists)
-  const hasPassword = await prisma.settings.findUnique({
-    where: { key: "user_password" },
-  });
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!hasPassword) {
-    redirect("/welcome");
+  if (!user) {
+    redirect("/login");
   }
 
   redirect("/chat");
