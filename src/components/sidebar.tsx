@@ -76,7 +76,7 @@ export function Sidebar() {
 
   const loadTaxEstimate = useCallback(async () => {
     try {
-      const res = await fetch("/api/statements?type=tax_estimate");
+      const res = await fetch(`/api/statements?type=tax_estimate&year=${activeYear}`);
       if (res.ok) {
         const data = await res.json();
         if (data.taxEstimate) {
@@ -87,7 +87,7 @@ export function Sidebar() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [activeYear]);
 
   const loadAdminStatus = useCallback(async () => {
     try {
@@ -118,14 +118,15 @@ export function Sidebar() {
 
   useEffect(() => {
     loadSettings();
-    loadTaxEstimate();
     loadAdminStatus();
-  }, [loadSettings, loadTaxEstimate, loadAdminStatus]);
+  }, [loadSettings, loadAdminStatus]);
 
-  // Reload tax estimate when year changes
+  // Poll tax estimate every 10s so it updates after new transactions are logged
   useEffect(() => {
     loadTaxEstimate();
-  }, [activeYear, loadTaxEstimate]);
+    const interval = setInterval(loadTaxEstimate, 10000);
+    return () => clearInterval(interval);
+  }, [loadTaxEstimate]);
 
   async function switchYear(year: string) {
     setActiveYear(year);
