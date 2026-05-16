@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput } from "@/components/chat-input";
 import { Loader2 } from "lucide-react";
@@ -12,12 +12,38 @@ interface Message {
   createdAt: string;
 }
 
+const THINKING_PHRASES = [
+  "Thinking",
+  "Analyzing",
+  "Crunching numbers",
+  "Pondering",
+  "Calculating",
+  "Working it out",
+  "Figuring it out",
+  "Discombobulating",
+  "Wandering",
+  "Processing",
+];
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [ownerName, setOwnerName] = useState("there");
+  const [thinkingPhrase, setThinkingPhrase] = useState(THINKING_PHRASES[0]);
+  const [streamingId, setStreamingId] = useState<number | null>(null);
+  const [streamingText, setStreamingText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prevLoadingRef = useRef(false);
+  const streamIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+  }
 
   // Load message history and owner name
   useEffect(() => {
@@ -46,14 +72,60 @@ export default function ChatPage() {
     loadData();
   }, []);
 
-  // Auto-scroll to bottom
+  // Scroll to bottom whenever messages change or loading finishes
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, loading]);
+    scrollToBottom();
+  }, [messages, loading, initialLoading]);
 
-  async function handleUpload(file: File) {
+  // Cycling thinking phrases while loading
+  useEffect(() => {
+    if (!loading) return;
+    let i = 0;
+    const interval = setInterval(() => {
+      i = (i + 1) % THINKING_PHRASES.length;
+      setThinkingPhrase(THINKING_PHRASES[i]);
+    }, 900);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  // Typewriter effect: trigger when loading transitions false → new assistant message
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+
+    if (wasLoading && !loading) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.role === "assistant" && lastMsg.content) {
+        // Clear any existing stream
+        if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+
+        setStreamingId(lastMsg.id);
+        setStreamingText("");
+
+        let i = 0;
+        const content = lastMsg.content;
+        streamIntervalRef.current = setInterval(() => {
+          i++;
+          setStreamingText(content.slice(0, i));
+          scrollToBottom();
+          if (i >= content.length) {
+            if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+            setStreamingId(null);
+            setStreamingText("");
+          }
+        }, 12);
+      }
+    }
+  }, [loading, messages]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+    };
+  }, []);
+
+  const handleUpload = useCallback(async (file: File) => {
     const userMsg: Message = {
       id: Date.now(),
       role: "user",
@@ -92,17 +164,17 @@ export default function ChatPage() {
         {
           id: Date.now() + 1,
           role: "assistant",
-          content: "Sorry, I couldn't read that receipt. Make sure it's a clear photo (JPG or PNG) and try again.",
+          content:
+            "Sorry, I couldn't read that receipt. Make sure it's a clear photo (JPG or PNG) and try again.",
           createdAt: new Date().toISOString(),
         },
       ]);
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   async function handleSend(message: string) {
-    // Optimistically add user message
     const userMsg: Message = {
       id: Date.now(),
       role: "user",
@@ -111,6 +183,7 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
+    setThinkingPhrase(THINKING_PHRASES[0]);
 
     try {
       const res = await fetch("/api/chat", {
@@ -134,14 +207,15 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
       console.error("Failed to send:", err);
-      const errorMsg: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content:
-          "Sorry, something went wrong. Please try again.",
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          content: "Sorry, something went wrong. Please try again.",
+          createdAt: new Date().toISOString(),
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -183,27 +257,33 @@ export default function ChatPage() {
                 </ul>
                 <p className="text-sm mt-3">
                   Tell me a little bit about your business and we can get
-                  started!
+                  started! Or tap 📷 to upload a receipt.
                 </p>
               </div>
             </div>
           </div>
         ) : (
           <div className="max-w-3xl mx-auto">
-            {messages.map((msg) => (
-              <ChatMessage
-                key={msg.id}
-                role={msg.role}
-                content={msg.content}
-              />
-            ))}
+            {messages.map((msg) => {
+              const isStreaming = msg.id === streamingId;
+              return (
+                <ChatMessage
+                  key={msg.id}
+                  role={msg.role}
+                  content={isStreaming ? streamingText : msg.content}
+                />
+              );
+            })}
             {loading && (
               <div className="flex gap-3 py-4 px-4 md:px-6 bg-muted/40">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">
                   <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
                 <div className="flex items-center">
-                  <p className="text-sm text-muted-foreground">Thinking...</p>
+                  <p className="text-sm text-muted-foreground">
+                    {thinkingPhrase}
+                    <span className="animate-pulse">...</span>
+                  </p>
                 </div>
               </div>
             )}

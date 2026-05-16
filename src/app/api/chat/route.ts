@@ -219,7 +219,8 @@ async function createChatCompletion(messages: XaiMessage[]) {
 async function handleToolCall(
   name: string,
   input: Record<string, unknown>,
-  userId: string
+  userId: string,
+  activeTaxYear: string
 ): Promise<string> {
   switch (name) {
     case "log_transaction": {
@@ -256,10 +257,15 @@ async function handleToolCall(
 
       const where: Record<string, unknown> = { userId };
       if (startDate || endDate) {
-        where.date = {};
-        if (startDate)
-          (where.date as Record<string, string>).gte = startDate;
+        where.date = {} as Record<string, string>;
+        if (startDate) (where.date as Record<string, string>).gte = startDate;
         if (endDate) (where.date as Record<string, string>).lte = endDate;
+      } else {
+        // Default to the active tax year so queries stay year-scoped
+        where.date = {
+          gte: `${activeTaxYear}-01-01`,
+          lte: `${activeTaxYear}-12-31`,
+        };
       }
       if (category) where.category = category;
 
@@ -434,6 +440,7 @@ export async function POST(request: NextRequest) {
           toolCall.function.name,
           input,
           userId,
+          activeTaxYear,
         );
 
         conversationHistory.push({
