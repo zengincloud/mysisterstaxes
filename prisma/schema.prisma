@@ -29,14 +29,27 @@ model Transaction {
   @@map("transactions")
 }
 
+model ChatSession {
+  id        Int      @id @default(autoincrement())
+  userId    String   @map("user_id")
+  title     String   @default("New Chat")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("chat_sessions")
+}
+
 model Message {
   id        Int      @id @default(autoincrement())
   userId    String   @default("") @map("user_id")
+  sessionId Int?     @map("session_id")
   role      String
   content   String
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId])
+  @@index([sessionId])
   @@map("messages")
 }
 

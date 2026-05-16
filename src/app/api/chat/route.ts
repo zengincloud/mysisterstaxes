@@ -374,7 +374,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { message } = await request.json();
+    const { message, sessionId: sessionIdRaw } = await request.json();
 
     if (!message || typeof message !== "string") {
       return NextResponse.json(
@@ -383,20 +383,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve or create session
+    let sessionId: number;
+    if (sessionIdRaw) {
+      sessionId = parseInt(sessionIdRaw);
+    } else {
+      const newSession = await prisma.chatSession.create({
+        data: { userId },
+      });
+      sessionId = newSession.id;
+    }
+
     // Get active tax year for this user
     const yearSetting = await prisma.settings.findUnique({
       where: { userId_key: { userId, key: "active_tax_year" } },
     });
     const activeTaxYear = yearSetting?.value || String(new Date().getFullYear());
 
+    // Auto-title session from first message
+    const session = await prisma.chatSession.findUnique({ where: { id: sessionId } });
+    if (session?.title === "New Chat") {
+      const title = message.slice(0, 45).trim() + (message.length > 45 ? "…" : "");
+      await prisma.chatSession.update({ where: { id: sessionId }, data: { title } });
+    } else {
+      // Bump updatedAt so session rises to the top of the list
+      await prisma.chatSession.update({ where: { id: sessionId }, data: { updatedAt: new Date() } });
+    }
+
     // Save user message
     await prisma.message.create({
-      data: { userId, role: "user", content: message },
+      data: { userId, sessionId, role: "user", content: message },
     });
 
-    // Get the 50 most recent messages, then reverse for chronological order
+    // Get the 50 most recent messages for this session, skip empty ones
     const recentMessages = await prisma.message.findMany({
-      where: { userId },
+      where: { userId, sessionId },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
@@ -405,12 +426,14 @@ export async function POST(request: NextRequest) {
     const systemPrompt = getSystemPrompt(activeTaxYear);
     const conversationHistory: XaiMessage[] = [
       { role: "system", content: systemPrompt },
-      ...recentMessages.map(
-        (msg): XaiMessage => ({
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-        })
-      ),
+      ...recentMessages
+        .filter((msg) => msg.content.trim() !== "")
+        .map(
+          (msg): XaiMessage => ({
+            role: msg.role as "user" | "assistant",
+            content: msg.content,
+          })
+        ),
     ];
 
     let responseMessage = await createChatCompletion(conversationHistory);
@@ -464,11 +487,12 @@ export async function POST(request: NextRequest) {
 
     // Save assistant message
     await prisma.message.create({
-      data: { userId, role: "assistant", content: assistantMessage },
+      data: { userId, sessionId, role: "assistant", content: assistantMessage },
     });
 
     return NextResponse.json({
       message: assistantMessage,
+      sessionId,
     });
   } catch (error) {
     console.error("Chat API error:", error);
