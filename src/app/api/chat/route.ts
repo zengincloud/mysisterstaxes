@@ -394,12 +394,13 @@ export async function POST(request: NextRequest) {
       data: { userId, role: "user", content: message },
     });
 
-    // Get recent conversation history for context
+    // Get the 50 most recent messages, then reverse for chronological order
     const recentMessages = await prisma.message.findMany({
       where: { userId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       take: 50,
     });
+    recentMessages.reverse();
 
     const systemPrompt = getSystemPrompt(activeTaxYear);
     const conversationHistory: XaiMessage[] = [

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput } from "@/components/chat-input";
-import { Loader2 } from "lucide-react";
+import { Loader2, Square } from "lucide-react";
 
 interface Message {
   id: number;
@@ -36,6 +36,7 @@ export default function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLoadingRef = useRef(false);
   const streamIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   function scrollToBottom() {
     requestAnimationFrame(() => {
@@ -174,6 +175,17 @@ export default function ChatPage() {
     }
   }, []);
 
+  function handleStop() {
+    abortControllerRef.current?.abort();
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+    setStreamingId(null);
+    setStreamingText("");
+    setLoading(false);
+  }
+
   async function handleSend(message: string) {
     const userMsg: Message = {
       id: Date.now(),
@@ -185,11 +197,14 @@ export default function ChatPage() {
     setLoading(true);
     setThinkingPhrase(THINKING_PHRASES[0]);
 
+    abortControllerRef.current = new AbortController();
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!res.ok) {
@@ -205,7 +220,8 @@ export default function ChatPage() {
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
       console.error("Failed to send:", err);
       setMessages((prev) => [
         ...prev,
@@ -275,16 +291,22 @@ export default function ChatPage() {
               );
             })}
             {loading && (
-              <div className="flex gap-3 py-4 px-4 md:px-6 bg-muted/40">
+              <div className="flex gap-3 py-4 px-4 md:px-6 bg-muted/40 items-center">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">
                   <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
-                <div className="flex items-center">
-                  <p className="text-sm text-muted-foreground">
-                    {thinkingPhrase}
-                    <span className="animate-pulse">...</span>
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground flex-1">
+                  {thinkingPhrase}
+                  <span className="animate-pulse">...</span>
+                </p>
+                <button
+                  onClick={handleStop}
+                  title="Stop"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted"
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  Stop
+                </button>
               </div>
             )}
           </div>
