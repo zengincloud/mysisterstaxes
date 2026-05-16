@@ -446,7 +446,13 @@ export async function POST(request: NextRequest) {
       responseMessage = await createChatCompletion(conversationHistory);
     }
 
-    const assistantMessage = responseMessage.content || "";
+    let assistantMessage = responseMessage.content || "";
+
+    // Grok sometimes returns null content after tool calls — use a fallback so the chat doesn't go blank
+    if (!assistantMessage && toolCallIterations > 0) {
+      assistantMessage =
+        "✅ Done! Transaction logged. Let me know if you have more to add or want a summary.";
+    }
 
     // Save assistant message
     await prisma.message.create({

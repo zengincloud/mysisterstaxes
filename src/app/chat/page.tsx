@@ -53,6 +53,54 @@ export default function ChatPage() {
     }
   }, [messages, loading]);
 
+  async function handleUpload(file: File) {
+    const userMsg: Message = {
+      id: Date.now(),
+      role: "user",
+      content: `📷 Receipt uploaded: ${file.name}`,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+
+      const assistantMsg: Message = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: `✅ ${data.message}${data.flagged > 0 ? "\n\n⚠️ Some entries were flagged for CPA review — check the Journal tab." : ""}`,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      console.error("Receipt upload failed:", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          content: "Sorry, I couldn't read that receipt. Make sure it's a clear photo (JPG or PNG) and try again.",
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSend(message: string) {
     // Optimistically add user message
     const userMsg: Message = {
@@ -164,7 +212,7 @@ export default function ChatPage() {
       </div>
 
       {/* Input */}
-      <ChatInput onSend={handleSend} disabled={loading} />
+      <ChatInput onSend={handleSend} onUpload={handleUpload} disabled={loading} />
     </div>
   );
 }
