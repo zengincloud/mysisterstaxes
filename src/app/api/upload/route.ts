@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
       const text = await file.text();
       content = [
         {
-          type: "text",
+          type: "input_text",
           text: `${PARSE_PROMPT}\n\nHere is the CSV data:\n\n${text}`,
         },
       ];
