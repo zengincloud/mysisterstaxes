@@ -1,144 +1,220 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { getUserId } from "@/lib/auth";
 import { getSystemPrompt } from "@/lib/system-prompt";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const XAI_API_URL = "https://api.x.ai/v1";
+const XAI_MODEL = process.env.XAI_MODEL || "grok-4.3";
 
-const tools: Anthropic.Tool[] = [
+type XaiToolCall = {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+};
+
+type XaiMessage =
+  | {
+      role: "system" | "user";
+      content: string;
+    }
+  | {
+      role: "assistant";
+      content: string | null;
+      tool_calls?: XaiToolCall[];
+    }
+  | {
+      role: "tool";
+      tool_call_id: string;
+      content: string;
+    };
+
+type XaiChatResponse = {
+  choices?: Array<{
+    message: {
+      content?: string | null;
+      tool_calls?: XaiToolCall[];
+    };
+  }>;
+  error?: { message?: string };
+};
+
+const tools = [
   {
-    name: "log_transaction",
-    description:
-      "Log a business transaction as a double-entry journal entry. Use this for every transaction the user mentions.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        date: {
-          type: "string",
-          description: "Transaction date in YYYY-MM-DD format",
+    type: "function",
+    function: {
+      name: "log_transaction",
+      description:
+        "Log a business transaction as a double-entry journal entry. Use this for every transaction the user mentions.",
+      parameters: {
+        type: "object",
+        properties: {
+          date: {
+            type: "string",
+            description: "Transaction date in YYYY-MM-DD format",
+          },
+          description: {
+            type: "string",
+            description: "Brief description of the transaction",
+          },
+          amount: {
+            type: "number",
+            description:
+              "Transaction amount in CAD (before GST, the base amount)",
+          },
+          category: {
+            type: "string",
+            enum: ["revenue", "cogs", "operating_expense", "capital_asset"],
+            description: "Transaction category",
+          },
+          account_debit: {
+            type: "string",
+            description:
+              "Account number and name to debit (e.g., '1100 Accounts Receivable')",
+          },
+          account_credit: {
+            type: "string",
+            description:
+              "Account number and name to credit (e.g., '4000 Revenue')",
+          },
+          gst_amount: {
+            type: "number",
+            description: "GST amount (5% of the base amount)",
+          },
+          is_capital_asset: {
+            type: "boolean",
+            description:
+              "Whether this is a capital asset (over $500, lasting >1 year)",
+          },
+          cca_class: {
+            type: "string",
+            description:
+              "CCA class if capital asset (e.g., 'Class 8', 'Class 10', 'Class 50')",
+          },
+          cca_rate: {
+            type: "number",
+            description: "CCA rate as decimal (e.g., 0.20 for 20%)",
+          },
+          notes: {
+            type: "string",
+            description: "Any additional notes or flags",
+          },
+          flagged_for_review: {
+            type: "boolean",
+            description:
+              "Whether to flag this for CPA review (true if uncertain or capital asset)",
+          },
         },
-        description: {
-          type: "string",
-          description: "Brief description of the transaction",
-        },
-        amount: {
-          type: "number",
-          description:
-            "Transaction amount in CAD (before GST, the base amount)",
-        },
-        category: {
-          type: "string",
-          enum: ["revenue", "cogs", "operating_expense", "capital_asset"],
-          description: "Transaction category",
-        },
-        account_debit: {
-          type: "string",
-          description:
-            "Account number and name to debit (e.g., '1100 Accounts Receivable')",
-        },
-        account_credit: {
-          type: "string",
-          description:
-            "Account number and name to credit (e.g., '4000 Revenue')",
-        },
-        gst_amount: {
-          type: "number",
-          description: "GST amount (5% of the base amount)",
-        },
-        is_capital_asset: {
-          type: "boolean",
-          description: "Whether this is a capital asset (over $500, lasting >1 year)",
-        },
-        cca_class: {
-          type: "string",
-          description:
-            "CCA class if capital asset (e.g., 'Class 8', 'Class 10', 'Class 50')",
-        },
-        cca_rate: {
-          type: "number",
-          description: "CCA rate as decimal (e.g., 0.20 for 20%)",
-        },
-        notes: {
-          type: "string",
-          description: "Any additional notes or flags",
-        },
-        flagged_for_review: {
-          type: "boolean",
-          description:
-            "Whether to flag this for CPA review (true if uncertain or capital asset)",
-        },
+        required: [
+          "date",
+          "description",
+          "amount",
+          "category",
+          "account_debit",
+          "account_credit",
+          "gst_amount",
+          "is_capital_asset",
+          "flagged_for_review",
+        ],
       },
-      required: [
-        "date",
-        "description",
-        "amount",
-        "category",
-        "account_debit",
-        "account_credit",
-        "gst_amount",
-        "is_capital_asset",
-        "flagged_for_review",
-      ],
     },
   },
   {
-    name: "query_transactions",
-    description:
-      "Query the transaction database to answer questions like 'how much revenue this year', 'total expenses in January', etc.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        query_type: {
-          type: "string",
-          enum: [
-            "total_revenue",
-            "total_expenses",
-            "total_by_category",
-            "recent_transactions",
-            "gst_summary",
-            "all_transactions",
-          ],
-          description: "Type of query to run",
+    type: "function",
+    function: {
+      name: "query_transactions",
+      description:
+        "Query the transaction database to answer questions like 'how much revenue this year', 'total expenses in January', etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          query_type: {
+            type: "string",
+            enum: [
+              "total_revenue",
+              "total_expenses",
+              "total_by_category",
+              "recent_transactions",
+              "gst_summary",
+              "all_transactions",
+            ],
+            description: "Type of query to run",
+          },
+          start_date: {
+            type: "string",
+            description: "Start date filter (YYYY-MM-DD), optional",
+          },
+          end_date: {
+            type: "string",
+            description: "End date filter (YYYY-MM-DD), optional",
+          },
+          category: {
+            type: "string",
+            description: "Filter by category, optional",
+          },
+          limit: {
+            type: "number",
+            description: "Limit number of results, optional",
+          },
         },
-        start_date: {
-          type: "string",
-          description: "Start date filter (YYYY-MM-DD), optional",
-        },
-        end_date: {
-          type: "string",
-          description: "End date filter (YYYY-MM-DD), optional",
-        },
-        category: {
-          type: "string",
-          description: "Filter by category, optional",
-        },
-        limit: {
-          type: "number",
-          description: "Limit number of results, optional",
-        },
+        required: ["query_type"],
       },
-      required: ["query_type"],
     },
   },
   {
-    name: "delete_last_transaction",
-    description:
-      "Delete the most recent transaction. Use when the user says 'undo that', 'delete that', 'remove the last entry', etc.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        confirm: {
-          type: "boolean",
-          description: "Confirm deletion",
+    type: "function",
+    function: {
+      name: "delete_last_transaction",
+      description:
+        "Delete the most recent transaction. Use when the user says 'undo that', 'delete that', 'remove the last entry', etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          confirm: {
+            type: "boolean",
+            description: "Confirm deletion",
+          },
         },
+        required: ["confirm"],
       },
-      required: ["confirm"],
     },
   },
 ];
+
+async function createChatCompletion(messages: XaiMessage[]) {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("XAI_API_KEY is not configured");
+  }
+
+  const response = await fetch(`${XAI_API_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: XAI_MODEL,
+      max_tokens: 4096,
+      messages,
+      tools,
+    }),
+  });
+
+  const payload = (await response.json()) as XaiChatResponse;
+  if (!response.ok) {
+    throw new Error(payload.error?.message || "Grok chat request failed");
+  }
+
+  const message = payload.choices?.[0]?.message;
+  if (!message) {
+    throw new Error("Grok returned no chat message");
+  }
+
+  return message;
+}
 
 async function handleToolCall(
   name: string,
@@ -319,70 +395,58 @@ export async function POST(request: NextRequest) {
       take: 50,
     });
 
-    const conversationHistory: Anthropic.MessageParam[] = recentMessages.map(
-      (msg) => ({
-        role: msg.role as "user" | "assistant",
-        content: msg.content,
-      })
-    );
-
     const systemPrompt = getSystemPrompt(activeTaxYear);
+    const conversationHistory: XaiMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...recentMessages.map(
+        (msg): XaiMessage => ({
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+        })
+      ),
+    ];
 
-    // Call Claude with tools
-    let response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
-      system: systemPrompt,
-      tools,
-      messages: conversationHistory,
-    });
+    let responseMessage = await createChatCompletion(conversationHistory);
 
     // Process tool calls in a loop
-    while (response.stop_reason === "tool_use") {
-      const toolUseBlocks = response.content.filter(
-        (block) => block.type === "tool_use"
-      );
+    let toolCallIterations = 0;
+    while (responseMessage.tool_calls?.length) {
+      if (toolCallIterations >= 8) {
+        throw new Error("Grok exceeded the tool call limit");
+      }
+      toolCallIterations++;
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      conversationHistory.push({
+        role: "assistant",
+        content: responseMessage.content || null,
+        tool_calls: responseMessage.tool_calls,
+      });
 
-      for (const toolUse of toolUseBlocks) {
-        const tu = toolUse as unknown as { name: string; input: Record<string, unknown>; id: string };
+      for (const toolCall of responseMessage.tool_calls) {
+        let input: Record<string, unknown>;
+        try {
+          input = JSON.parse(toolCall.function.arguments || "{}");
+        } catch {
+          input = {};
+        }
+
         const result = await handleToolCall(
-          tu.name,
-          tu.input,
+          toolCall.function.name,
+          input,
           userId,
         );
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tu.id,
+
+        conversationHistory.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
           content: result,
         });
       }
 
-      // Continue conversation with tool results
-      conversationHistory.push({
-        role: "assistant",
-        content: response.content as unknown as Anthropic.ContentBlockParam[],
-      });
-      conversationHistory.push({
-        role: "user",
-        content: toolResults,
-      });
-
-      response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 4096,
-        system: systemPrompt,
-        tools,
-        messages: conversationHistory,
-      });
+      responseMessage = await createChatCompletion(conversationHistory);
     }
 
-    // Extract text response
-    const textBlocks = response.content.filter(
-      (block): block is Anthropic.TextBlock => block.type === "text"
-    );
-    const assistantMessage = textBlocks.map((b) => b.text).join("\n");
+    const assistantMessage = responseMessage.content || "";
 
     // Save assistant message
     await prisma.message.create({

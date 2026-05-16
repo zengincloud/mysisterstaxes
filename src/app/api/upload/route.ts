@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { getUserId } from "@/lib/auth";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const XAI_API_URL = "https://api.x.ai/v1";
+const XAI_MODEL = process.env.XAI_MODEL || "grok-4.3";
 
 const PARSE_PROMPT = `You are a bookkeeping transaction extractor for a small business in British Columbia, Canada (5% GST).
 
@@ -37,6 +35,79 @@ Rules:
 - Skip any transactions that are internal transfers, payments to credit cards from bank accounts, or duplicate entries
 - Return ONLY the JSON array, no other text. If no transactions found, return []`;
 
+type XaiInputContent =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string; detail?: "low" | "high" }
+  | { type: "input_file"; file_id: string };
+
+type XaiResponse = {
+  output?: Array<{
+    content?: Array<{
+      text?: string;
+      type?: string;
+    }>;
+  }>;
+  error?: { message?: string };
+};
+
+async function uploadFileToXai(file: File, apiKey: string): Promise<string> {
+  const formData = new FormData();
+  formData.append("expires_after", "86400");
+  formData.append("purpose", "assistants");
+  formData.append("file", file, file.name);
+
+  const response = await fetch(`${XAI_API_URL}/files`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  const payload = await response.json();
+  if (!response.ok || !payload.id) {
+    throw new Error(payload.error?.message || "Failed to upload file to xAI");
+  }
+
+  return payload.id;
+}
+
+async function parseWithGrok(content: XaiInputContent[]): Promise<string> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("XAI_API_KEY is not configured");
+  }
+
+  const response = await fetch(`${XAI_API_URL}/responses`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: XAI_MODEL,
+      input: [{ role: "user", content }],
+    }),
+  });
+
+  const payload = (await response.json()) as XaiResponse;
+  if (!response.ok) {
+    throw new Error(payload.error?.message || "Grok failed to parse document");
+  }
+
+  const text = payload.output
+    ?.flatMap((item) => item.content || [])
+    .map((item) => item.text)
+    .filter(Boolean)
+    .join("\n");
+
+  if (!text) {
+    throw new Error("Grok returned no text");
+  }
+
+  return text;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await getUserId();
@@ -67,7 +138,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let content: Anthropic.ContentBlockParam[];
+    let content: XaiInputContent[];
 
     if (isCSV) {
       const text = await file.text();
@@ -78,24 +149,22 @@ export async function POST(request: NextRequest) {
         },
       ];
     } else if (isPDF) {
-      const buffer = await file.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
+      const apiKey = process.env.XAI_API_KEY;
+      if (!apiKey) {
+        throw new Error("XAI_API_KEY is not configured");
+      }
+      const fileId = await uploadFileToXai(file, apiKey);
       content = [
         {
-          type: "document",
-          source: {
-            type: "base64",
-            media_type: "application/pdf",
-            data: base64,
-          },
-        } as unknown as Anthropic.ContentBlockParam,
-        {
-          type: "text",
+          type: "input_text",
           text: PARSE_PROMPT,
+        },
+        {
+          type: "input_file",
+          file_id: fileId,
         },
       ];
     } else {
-      // Image
       const buffer = await file.arrayBuffer();
       const base64 = Buffer.from(buffer).toString("base64");
       const mediaType = fileName.endsWith(".png")
@@ -103,39 +172,21 @@ export async function POST(request: NextRequest) {
         : "image/jpeg";
       content = [
         {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: mediaType,
-            data: base64,
-          },
-        } as unknown as Anthropic.ContentBlockParam,
+          type: "input_image",
+          image_url: `data:${mediaType};base64,${base64}`,
+          detail: "high",
+        },
         {
-          type: "text",
+          type: "input_text",
           text: PARSE_PROMPT,
         },
       ];
     }
 
-    // Send to Claude for parsing
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 8192,
-      messages: [{ role: "user", content }],
-    });
-
-    const textBlock = response.content.find(
-      (b): b is Anthropic.TextBlock => b.type === "text"
-    );
-    if (!textBlock) {
-      return NextResponse.json(
-        { error: "Failed to parse document" },
-        { status: 500 }
-      );
-    }
+    const responseText = await parseWithGrok(content);
 
     // Extract JSON from response (handle markdown code blocks)
-    let jsonText = textBlock.text.trim();
+    let jsonText = responseText.trim();
     const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
       jsonText = jsonMatch[1].trim();
@@ -147,8 +198,8 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json(
         {
-          error: "Failed to parse Claude's response as JSON",
-          raw: textBlock.text,
+          error: "Failed to parse Grok's response as JSON",
+          raw: responseText,
         },
         { status: 500 }
       );
