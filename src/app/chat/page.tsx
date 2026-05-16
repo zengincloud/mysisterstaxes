@@ -389,23 +389,28 @@ export default function ChatPage() {
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">
                   <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
-                <p className="text-sm text-muted-foreground flex-1">
+                <p className="text-sm text-muted-foreground">
                   {thinkingPhrase}
                   <span className="animate-pulse">...</span>
                 </p>
-                <button
-                  onClick={handleStop}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted"
-                >
-                  <Square className="h-3 w-3 fill-current" />
-                  Stop
-                </button>
               </div>
             )}
           </div>
         )}
       </div>
 
+      {/* Stop button — visible while loading OR while typewriter is running */}
+      {(loading || streamingId !== null) && (
+        <div className="flex justify-center pb-1">
+          <button
+            onClick={handleStop}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border rounded-full px-3 py-1 hover:bg-muted transition-colors bg-background shadow-sm"
+          >
+            <Square className="h-3 w-3 fill-current" />
+            Stop
+          </button>
+        </div>
+      )}
       <ChatInput onSend={handleSend} onUpload={handleUpload} disabled={loading} />
     </div>
   );
