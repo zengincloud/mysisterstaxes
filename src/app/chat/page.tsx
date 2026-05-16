@@ -60,6 +60,7 @@ export default function ChatPage() {
   const prevLoadingRef = useRef(false);
   const streamIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const hasAutoSelectedRef = useRef(false);
 
   function scrollToBottom() {
     requestAnimationFrame(() => {
@@ -101,6 +102,17 @@ export default function ChatPage() {
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  // Auto-select the most recent session on first load
+  useEffect(() => {
+    if (!sessionsLoading && sessions.length > 0 && !hasAutoSelectedRef.current) {
+      hasAutoSelectedRef.current = true;
+      const latest = sessions[0];
+      setActiveSessionId(latest.id);
+      setShowSessionsOnMobile(false);
+      loadMessages(latest.id);
+    }
+  }, [sessions, sessionsLoading, loadMessages]);
 
   // Scroll to bottom on messages change
   useEffect(() => {
