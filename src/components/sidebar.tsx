@@ -9,6 +9,7 @@ import {
   FileText,
   Upload,
   Download,
+  FileDown,
   LogOut,
   Menu,
   X,
@@ -140,7 +141,13 @@ export function Sidebar() {
   }
 
   async function handleExport() {
-    window.location.href = "/api/export";
+    window.location.href = `/api/export?year=${activeYear}`;
+  }
+
+  function handleExportPdf() {
+    const params = new URLSearchParams({ year: activeYear });
+    if (companyName) params.set("company", companyName);
+    window.open(`/print?${params}`, "_blank");
   }
 
   async function handleLogout() {
@@ -309,6 +316,13 @@ export function Sidebar() {
         >
           <Download className="h-4 w-4" />
           Export CSV
+        </button>
+        <button
+          onClick={handleExportPdf}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground w-full transition-colors"
+        >
+          <FileDown className="h-4 w-4" />
+          Export PDF
         </button>
 
         {/* Admin user picker */}

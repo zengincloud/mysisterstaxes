@@ -41,83 +41,46 @@ type XaiChatResponse = {
   error?: { message?: string };
 };
 
+const transactionSchema = {
+  type: "object",
+  properties: {
+    date: { type: "string", description: "Transaction date in YYYY-MM-DD format" },
+    description: { type: "string", description: "Brief description of the transaction" },
+    amount: { type: "number", description: "Transaction amount in CAD (before GST, the base amount)" },
+    category: {
+      type: "string",
+      enum: ["revenue", "cogs", "operating_expense", "capital_asset"],
+      description: "Transaction category",
+    },
+    account_debit: { type: "string", description: "Account number and name to debit (e.g., '1100 Accounts Receivable')" },
+    account_credit: { type: "string", description: "Account number and name to credit (e.g., '4000 Revenue')" },
+    gst_amount: { type: "number", description: "GST amount (5% of the base amount)" },
+    is_capital_asset: { type: "boolean", description: "Whether this is a capital asset (over $500, lasting >1 year)" },
+    cca_class: { type: "string", description: "CCA class if capital asset (e.g., 'Class 8', 'Class 10', 'Class 50')" },
+    cca_rate: { type: "number", description: "CCA rate as decimal (e.g., 0.20 for 20%)" },
+    notes: { type: "string", description: "Any additional notes or flags" },
+    flagged_for_review: { type: "boolean", description: "Whether to flag this for CPA review (true if uncertain or capital asset)" },
+  },
+  required: ["date", "description", "amount", "category", "account_debit", "account_credit", "gst_amount", "is_capital_asset", "flagged_for_review"],
+};
+
 const tools = [
   {
     type: "function",
     function: {
-      name: "log_transaction",
+      name: "log_transactions",
       description:
-        "Log a business transaction as a double-entry journal entry. Use this for every transaction the user mentions.",
+        "Log one or more business transactions as double-entry journal entries. ALWAYS use this tool — pass ALL transactions in the 'transactions' array in a single call. Never call this multiple times when you can batch them.",
       parameters: {
         type: "object",
         properties: {
-          date: {
-            type: "string",
-            description: "Transaction date in YYYY-MM-DD format",
-          },
-          description: {
-            type: "string",
-            description: "Brief description of the transaction",
-          },
-          amount: {
-            type: "number",
-            description:
-              "Transaction amount in CAD (before GST, the base amount)",
-          },
-          category: {
-            type: "string",
-            enum: ["revenue", "cogs", "operating_expense", "capital_asset"],
-            description: "Transaction category",
-          },
-          account_debit: {
-            type: "string",
-            description:
-              "Account number and name to debit (e.g., '1100 Accounts Receivable')",
-          },
-          account_credit: {
-            type: "string",
-            description:
-              "Account number and name to credit (e.g., '4000 Revenue')",
-          },
-          gst_amount: {
-            type: "number",
-            description: "GST amount (5% of the base amount)",
-          },
-          is_capital_asset: {
-            type: "boolean",
-            description:
-              "Whether this is a capital asset (over $500, lasting >1 year)",
-          },
-          cca_class: {
-            type: "string",
-            description:
-              "CCA class if capital asset (e.g., 'Class 8', 'Class 10', 'Class 50')",
-          },
-          cca_rate: {
-            type: "number",
-            description: "CCA rate as decimal (e.g., 0.20 for 20%)",
-          },
-          notes: {
-            type: "string",
-            description: "Any additional notes or flags",
-          },
-          flagged_for_review: {
-            type: "boolean",
-            description:
-              "Whether to flag this for CPA review (true if uncertain or capital asset)",
+          transactions: {
+            type: "array",
+            description: "Array of all transactions to log. Include every transaction the user mentioned.",
+            items: transactionSchema,
           },
         },
-        required: [
-          "date",
-          "description",
-          "amount",
-          "category",
-          "account_debit",
-          "account_credit",
-          "gst_amount",
-          "is_capital_asset",
-          "flagged_for_review",
-        ],
+        required: ["transactions"],
       },
     },
   },
@@ -223,6 +186,41 @@ async function handleToolCall(
   activeTaxYear: string
 ): Promise<string> {
   switch (name) {
+    case "log_transactions": {
+      const rows = input.transactions as Array<Record<string, unknown>>;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return JSON.stringify({ success: false, message: "No transactions provided" });
+      }
+      const created = await prisma.$transaction(
+        rows.map((t) =>
+          prisma.transaction.create({
+            data: {
+              userId,
+              date: t.date as string,
+              description: t.description as string,
+              amount: t.amount as number,
+              category: t.category as string,
+              accountDebit: t.account_debit as string,
+              accountCredit: t.account_credit as string,
+              gstAmount: (t.gst_amount as number) || 0,
+              isCapitalAsset: (t.is_capital_asset as boolean) || false,
+              ccaClass: (t.cca_class as string) || null,
+              ccaRate: (t.cca_rate as number) || null,
+              notes: (t.notes as string) || null,
+              flaggedForReview: (t.flagged_for_review as boolean) || false,
+            },
+          })
+        )
+      );
+      return JSON.stringify({
+        success: true,
+        count: created.length,
+        ids: created.map((t) => t.id),
+        message: `${created.length} transaction${created.length !== 1 ? "s" : ""} logged successfully`,
+      });
+    }
+
+    // Keep legacy single-transaction tool for backwards compatibility
     case "log_transaction": {
       const transaction = await prisma.transaction.create({
         data: {
