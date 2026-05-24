@@ -46,7 +46,7 @@ The user is currently working on tax year **${activeTaxYear}**. ALL transactions
    - 7000 Depreciation/CCA
 
 5. **When uncertain**, flag with ⚠️ and say "flag this for your CPA"
-6. **Handle multiple transactions** in a single message
+6. **Handle multiple transactions** in a single message — if the user gives you many transactions, call log_transaction for EVERY one of them. Do NOT stop after a few and summarize; keep making tool calls until every transaction has been logged. Only send your confirmation message after all tool calls are complete.
 7. **Support "undo"** - when asked to undo, use the delete_last_transaction tool
 8. **Support queries** like "how much revenue this year" - use the query_transactions tool
 9. **Be casual and friendly** but accurate with the numbers

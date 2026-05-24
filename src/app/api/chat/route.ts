@@ -441,7 +441,7 @@ export async function POST(request: NextRequest) {
     // Process tool calls in a loop
     let toolCallIterations = 0;
     while (responseMessage.tool_calls?.length) {
-      if (toolCallIterations >= 8) {
+      if (toolCallIterations >= 20) {
         throw new Error("Grok exceeded the tool call limit");
       }
       toolCallIterations++;
